@@ -1,0 +1,17 @@
+{
+  "name": "price-tracker-lambda",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lambda functions for the Price Watcher",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.500.0",
+    "@aws-sdk/lib-dynamodb": "^3.500.0",
+    "@aws-sdk/client-sns": "^3.500.0",
+    "cheerio": "^1.0.0-rc.12",
+    "undici": "^6.6.0"
+  }
+}

@@ -1,0 +1,113 @@
+name: Deploy Price Watcher
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  SAM_STACK_NAME: price-watcher
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # -------------------------------------------------------
+  # 1. Deploy backend (SAM — Lambda + DynamoDB + SNS + EventBridge)
+  # -------------------------------------------------------
+  deploy-backend:
+    runs-on: ubuntu-latest
+    outputs:
+      api_url: ${{ steps.deploy.outputs.api_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Lambda dependencies
+        working-directory: lambda
+        run: npm ci
+
+      - name: Setup SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: SAM Build
+        run: sam build
+
+      - name: SAM Deploy
+        id: deploy
+        run: |
+          sam deploy \
+            --stack-name ${{ env.SAM_STACK_NAME }} \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides AlertEmail=${{ secrets.ALERT_EMAIL }}
+
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.SAM_STACK_NAME }} \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" \
+            --output text)
+
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+
+  # -------------------------------------------------------
+  # 2. Build & deploy frontend (Next.js)
+  # -------------------------------------------------------
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build Next.js
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_URL: ${{ needs.deploy-backend.outputs.api_url }}
+        run: npm run build
+
+      # -----------------------------------------------------------
+      # Deploy target — choose ONE of the options below and remove
+      # the others. Examples for Vercel and S3+CloudFront are shown.
+      # -----------------------------------------------------------
+
+      # Option A: Deploy to Vercel
+      - name: Deploy to Vercel
+        if: ${{ vars.DEPLOY_TARGET == 'vercel' }}
+        working-directory: frontend
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          npx vercel --prod --token $VERCEL_TOKEN
+
+      # Option B: Deploy to S3 + CloudFront (static export)
+      - name: Deploy to S3
+        if: ${{ vars.DEPLOY_TARGET == 's3' }}
+        run: |
+          aws s3 sync frontend/out s3://${{ secrets.S3_BUCKET }} --delete
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CLOUDFRONT_DIST_ID }} \
+            --paths "/*"

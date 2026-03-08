@@ -1,0 +1,129 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless Price Watcher — Lambda scraper, DynamoDB, EventBridge, SNS
+
+Parameters:
+  AlertEmail:
+    Type: String
+    Description: Email address to receive price-drop alerts
+
+Globals:
+  Function:
+    Timeout: 60
+    Runtime: nodejs20.x
+    MemorySize: 512
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref PriceTrackerTable
+        SNS_TOPIC_ARN: !Ref PriceAlertTopic
+
+Resources:
+  # ---------------------------------------------------------------
+  # DynamoDB Table
+  # ---------------------------------------------------------------
+  # Schema:
+  #   Partition Key (PK): productUrl  (String)  — the tracked URL
+  #   Sort Key (SK):      sk          (String)  — "META" for latest
+  #                                               info, or ISO timestamp for history
+  #
+  # Item patterns:
+  #   META item  → { productUrl, sk: "META", currentPrice, productName, createdAt, updatedAt }
+  #   HISTORY    → { productUrl, sk: "2026-03-08T12:00:00Z", price }
+  # ---------------------------------------------------------------
+  PriceTrackerTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: PriceTracker
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: productUrl
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: productUrl
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+
+  # ---------------------------------------------------------------
+  # SNS Topic + Email Subscription
+  # ---------------------------------------------------------------
+  PriceAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: PriceDropAlerts
+
+  PriceAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref PriceAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ---------------------------------------------------------------
+  # Lambda — Price Scraper
+  # ---------------------------------------------------------------
+  PriceScraperFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: PriceScraper
+      CodeUri: lambda/
+      Handler: index.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PriceTrackerTable
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt PriceAlertTopic.TopicName
+      Events:
+        ScheduledScrape:
+          Type: Schedule
+          Properties:
+            Schedule: rate(6 hours)
+            Description: Scrape all tracked products every 6 hours
+            Enabled: true
+
+  # ---------------------------------------------------------------
+  # Lambda — API  (CRUD for the dashboard)
+  # ---------------------------------------------------------------
+  PriceTrackerApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: PriceTrackerApi
+      CodeUri: lambda/
+      Handler: api.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PriceTrackerTable
+      Events:
+        GetProducts:
+          Type: Api
+          Properties:
+            Path: /products
+            Method: GET
+        AddProduct:
+          Type: Api
+          Properties:
+            Path: /products
+            Method: POST
+        DeleteProduct:
+          Type: Api
+          Properties:
+            Path: /products/{url}
+            Method: DELETE
+        GetHistory:
+          Type: Api
+          Properties:
+            Path: /products/{url}/history
+            Method: GET
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+  ScraperFunctionArn:
+    Description: Scraper Lambda ARN
+    Value: !GetAtt PriceScraperFunction.Arn
+  TableName:
+    Description: DynamoDB table name
+    Value: !Ref PriceTrackerTable

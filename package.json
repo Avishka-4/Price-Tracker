@@ -1,0 +1,8 @@
+{
+  "name": "price-tracker",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "lambda"
+  ]
+}
