@@ -2,16 +2,25 @@
 
 A fully serverless product-price tracker running on AWS. Add any product URL, and the system scrapes the price every 6 hours and sends you an email when it drops.
 
+## Uses of This App
+
+- Track product prices from e-commerce pages without checking them manually.
+- Monitor price drops on items you plan to buy later.
+- Build a personal watchlist for electronics, fashion, books, or other online products.
+- Keep a simple timestamped price history for each tracked URL.
+- Get email alerts through Amazon SNS when a product becomes cheaper than the last recorded price.
+- Use it as a serverless AWS learning project that combines Next.js, Lambda, DynamoDB, EventBridge, API Gateway, and SNS.
+
 ## Architecture
 
 ```
-┌──────────────┐        ┌──────────────┐      ┌──────────────┐
-│  Next.js 14  │─────▶ │ API Gateway │─────▶│  Lambda API  │
-│  Dashboard   │        │   (REST)     │       │  (CRUD)      │
-└──────────────┘        └──────────────┘       └──────┬───────┘
+┌──────────────┐       ┌──────────────┐      ┌──────────────┐
+│  Next.js 14  │─────▶│  API Gateway │─────▶│  Lambda API  │
+│  Dashboard   │      │   (REST)     │      │  (CRUD)      │
+└──────────────┘      └──────────────┘      └──────┬───────┘
                                                    │
-                      ┌──────────────┐      ┌──────▼───────┐
-                      │ EventBridge  │─────▶│  Lambda      │
+                      ┌──────────────┐        ┌──────▼───────┐
+                      │ EventBridge  │─────▶  │ Lambda      │
                       │ (every 6 hr) │      │  Scraper     │
                       └──────────────┘      └──────┬───────┘
                                                    │
@@ -25,14 +34,14 @@ A fully serverless product-price tracker running on AWS. Add any product URL, an
 
 ## DynamoDB Schema
 
-| Attribute      | Type   | Description                                        |
-| ------------   | ------ | ------------------------------------------------   |
-| `productUrl`   | String | **Partition Key** — the tracked product URL        |
+| Attribute      | Type   | Description                                                           |
+| ------------   | ------ | ----------------------------------------------------------------------|
+| `productUrl`   | String | **Partition Key** — the tracked product URL                           |
 | `sk`           | String | **Sort Key** — `"META"` for latest info, or ISO timestamp for history |
-| `currentPrice` | Number | Latest scraped price (META item only)              |
-| `price`        | Number | Price at point in time (history items only)        |
-| `createdAt`    | String | ISO timestamp when tracking started                |
-| `updatedAt`    | String | ISO timestamp of last scrape                       |
+| `currentPrice` | Number | Latest scraped price (META item only)                                 |
+| `price`        | Number | Price at point in time (history items only)                           |
+| `createdAt`    | String | ISO timestamp when tracking started                                   |
+| `updatedAt`    | String | ISO timestamp of last scrape                                          |
 
 **Item patterns:**
 
@@ -41,29 +50,6 @@ META item → { productUrl: "https://…", sk: "META", currentPrice: 29.99, crea
 History   → { productUrl: "https://…", sk: "2026-03-08T12:00:00Z", price: 29.99 }
 ```
 
-## Project Structure
-
-```
-price-tracker/
-├── .github/workflows/deploy.yml   # CI/CD pipeline
-├── template.yaml                  # AWS SAM (IaC)
-├── lambda/
-│   ├── index.js                   # Scraper (EventBridge → Lambda)
-│   ├── api.js                     # REST API (API Gateway → Lambda)
-│   └── package.json
-└── frontend/
-    ├── src/
-    │   ├── app/
-    │   │   ├── layout.tsx
-    │   │   ├── page.tsx
-    │   │   └── globals.css
-    │   ├── components/
-    │   │   ├── AddUrlForm.tsx
-    │   │   └── ProductCard.tsx
-    │   └── lib/api.ts
-    ├── .env.example
-    └── package.json
-```
 
 ## Prerequisites
 
@@ -131,6 +117,3 @@ The scraper uses common CSS selectors that work on many e-commerce sites:
 
 To add custom selectors, edit `PRICE_SELECTORS` in `lambda/index.js`.
 
-## License
-
-MIT
