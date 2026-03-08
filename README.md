@@ -1,6 +1,9 @@
 # 📉 Serverless Price Watcher
 
-A fully serverless product-price tracker running on AWS. Add any product URL, and the system scrapes the price every 6 hours and sends you an email when it drops.
+A fully serverless product-price tracker running on AWS , with a Next.js (TypeScript, Tailwind CSS) dashboard, AWS Lambda
+(Node.js) scraper using undici and Cheerio, Amazon DynamoDB for storing price history, and AWS EventBridge to
+trigger automated price checks every six hours.
+Add any product URL, and the system scrapes the price every 6 hours and sends you an email when it drops
 
 ## Uses of This App
 
